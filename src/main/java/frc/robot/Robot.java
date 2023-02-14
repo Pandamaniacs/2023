@@ -34,11 +34,6 @@ import edu.wpi.first.wpilibj.DigitalInput;
 import edu.wpi.first.wpilibj.PneumaticsModuleType;
 import edu.wpi.first.wpilibj.Solenoid;
 
-/**
- * This is a demo program showing the use of OpenCV to do vision processing. The image is acquired
- * from the USB camera, then a rectangle is put on the image and sent to the dashboard. OpenCV has
- * many methods for different types of processing.
- */
 public class Robot extends TimedRobot {
   PhotonCamera camera = new PhotonCamera("Microsoft_LifeCam_HD-3000");
   private XboxController driverController = new XboxController (0);
@@ -66,10 +61,6 @@ public class Robot extends TimedRobot {
   Solenoid phSolenoid = new Solenoid(PneumaticsModuleType.REVPH, 0);
   Solenoid phSolenoid2 = new Solenoid(PneumaticsModuleType.REVPH, 1);
 
- // private XboxController xbox = new XboxController (0);
-  final double P_GAIN = 0.1;
-  final double D_GAIN = 0.0;
-  PIDController controller = new PIDController(P_GAIN, 0, D_GAIN);
   //angle between the horizontal and the camera
   double degrees = Units.radiansToDegrees(0);
   final double CAMERA_HEIGHT_METERS = Units.inchesToMeters(24);
@@ -78,6 +69,15 @@ public class Robot extends TimedRobot {
   DigitalInput back = new DigitalInput(0);
   DigitalInput shoot = new DigitalInput(1);
   DigitalInput intake = new DigitalInput(2);
+
+
+  final double kP_ANGLE = 0, kI_ANGLE = 0, kD_ANGLE = 0;
+  final double kP_DIST = 0, kI_DIST = 0, kD_DIST = 0;
+  PIDController PID_ANGLE = new PIDController(kP_ANGLE, kI_ANGLE, kD_ANGLE);
+  PIDController PID_DIST = new PIDController(kP_DIST, kI_DIST, kD_DIST);
+
+  double SET_ANGLE = 0;//degrees
+  double SET_DIST = 0;//meters
 
   @Override
   public void robotInit() {
@@ -93,24 +93,11 @@ public class Robot extends TimedRobot {
     intakes = new CANSparkMax(intakesID, MotorType.kBrushless);
     leftMotor.restoreFactoryDefaults();
     leftFollow.restoreFactoryDefaults();
-    //leftFollow2.restoreFactoryDefaults();
     rightMotor.restoreFactoryDefaults();
     rightFollow.restoreFactoryDefaults();
-    //rightFollow2.restoreFactoryDefaults();
     intakes.restoreFactoryDefaults();
-    //int dtCurrentLimit = 60;
-    //int intakeCurrentLimit = 30;
-   /* leftMotor.setSmartCurrentLimit(dtCurrentLimit);
-    leftFollow.setSmartCurrentLimit(dtCurrentLimit);
-    leftFollow2.setSmartCurrentLimit(dtCurrentLimit);
-    rightMotor.setSmartCurrentLimit(dtCurrentLimit);
-    rightFollow.setSmartCurrentLimit(dtCurrentLimit);
-    rightFollow2.setSmartCurrentLimit(dtCurrentLimit);
-    intakes.setSmartCurrentLimit(intakeCurrentLimit); */
     leftFollow.follow(leftMotor);
-    //leftFollow2.follow(leftMotor);
     rightFollow.follow(rightMotor);
-   // rightFollow2.follow(rightFollow);
 
     leftMotor.burnFlash();
     leftFollow.burnFlash();
@@ -121,11 +108,6 @@ public class Robot extends TimedRobot {
     myRobot = new DifferentialDrive(leftMotor, rightMotor);
     phCompressor.enableDigital();
  }
-
-  PIDController dController = new PIDController(0.1, 0.0, 0.0);
-  final double goal = 30;
-  //CANSparkMax left = new CANSparkMax(1, MotorType.kBrushless);
-  //CANSparkMax right = new CANSparkMax(3, MotorType.kBrushless);
 
     @Override
   public void autonomousInit() {
@@ -181,27 +163,28 @@ public class Robot extends TimedRobot {
       phCompressor.disable();
     }
 
-    if(driverController.getAButton() || true) {
+    if(result.hasTargets()) {
+      List<PhotonTrackedTarget> targets = result.getTargets();
+      PhotonTrackedTarget target = targets.get(0);
+      //degrees = Units.radiansToDegrees(result.getBestTarget().getYaw());
+      //System.out.println("degrees: " + degrees);
+      SmartDashboard.putNumber("target ID", target.getFiducialId());
+      SmartDashboard.putNumber("X (forward)", target.getBestCameraToTarget().getTranslation().getX());
+      SmartDashboard.putNumber("Y (left)", target.getBestCameraToTarget().getTranslation().getY());
+      SmartDashboard.putNumber("Z (up)", target.getBestCameraToTarget().getTranslation().getZ());
+      SmartDashboard.putNumber("X ROTATION (roll)", Units.radiansToDegrees(target.getBestCameraToTarget().getRotation().getX()));
+      SmartDashboard.putNumber("Y ROTATION (pitch)", Units.radiansToDegrees(target.getBestCameraToTarget().getRotation().getY()));
+      SmartDashboard.putNumber("Z ROTATION (yaw)", Units.radiansToDegrees(target.getBestCameraToTarget().getRotation().getZ()));
+      //SmartDashboard.putNumber("degrees", degrees);
 
-      if(result.hasTargets()) {
-        List<PhotonTrackedTarget> targets = result.getTargets();
-        PhotonTrackedTarget target = targets.get(0);
-        //degrees = Units.radiansToDegrees(result.getBestTarget().getYaw());
-        //System.out.println("degrees: " + degrees);
-        SmartDashboard.putNumber("target ID", target.getFiducialId());
-        SmartDashboard.putNumber("X (forward)", target.getBestCameraToTarget().getTranslation().getX());
-        SmartDashboard.putNumber("Y (left)", target.getBestCameraToTarget().getTranslation().getY());
-        SmartDashboard.putNumber("Z (up)", target.getBestCameraToTarget().getTranslation().getZ());
-        SmartDashboard.putNumber("X ROTATION (roll)", Units.radiansToDegrees(target.getBestCameraToTarget().getRotation().getX()));
-        SmartDashboard.putNumber("Y ROTATION (pitch)", Units.radiansToDegrees(target.getBestCameraToTarget().getRotation().getY()));
-        SmartDashboard.putNumber("Z ROTATION (yaw)", Units.radiansToDegrees(target.getBestCameraToTarget().getRotation().getZ()));
-        //SmartDashboard.putNumber("degrees", degrees);
-        //forward = -controller.calculate(degrees, GOAL_RANGE_METERS);
-        forward = -controller.calculate(result.getBestTarget().getPitch(), 0);
+      if(driverController.getAButton() || true) {
+        SET_DIST = 1;
+        forward = PID_DIST.calculate(target.getBestCameraToTarget().getTranslation().getX(), SET_DIST);
+        PID_DIST.setTolerance(.05, 10);//set tolerance to .1 meters, check 10x per second
+        SmartDashboard.putBoolean("DISTANCE PID AT SET POINT", PID_DIST.atSetpoint());
       } else {
-        forward = 0;
+        forward = driverController.getLeftY();
       }
-    }
 
     if (shootController.getLeftBumperPressed()) {
       phSolenoid2.set(true);
