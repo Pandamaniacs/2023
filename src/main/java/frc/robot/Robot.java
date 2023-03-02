@@ -4,6 +4,7 @@ import edu.wpi.first.math.controller.PIDController;
 import edu.wpi.first.math.util.Units;
 import edu.wpi.first.wpilibj.TimedRobot;
 import edu.wpi.first.wpilibj.XboxController;
+import edu.wpi.first.wpilibj.GenericHID.RumbleType;
 import edu.wpi.first.wpilibj.drive.DifferentialDrive;
 import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
 
@@ -13,6 +14,9 @@ import edu.wpi.first.wpilibj.Timer;
 import java.util.List;
 import com.revrobotics.*;
 import com.revrobotics.CANSparkMaxLowLevel.MotorType;
+
+import edu.wpi.first.wpilibj.AddressableLED;
+import edu.wpi.first.wpilibj.AddressableLEDBuffer;
 import edu.wpi.first.wpilibj.Compressor;
 import edu.wpi.first.wpilibj.DigitalInput;
 import edu.wpi.first.wpilibj.PneumaticsModuleType;
@@ -41,15 +45,22 @@ public class Robot extends TimedRobot {
   private CANSparkMax intakeMotor;
   private final Timer timer = new Timer();
 
+  AddressableLED indicatorLed;
+  AddressableLEDBuffer ledBuffer;
+  final int ledPort = 0;
+  final int ledLength = 20;
+
   Compressor phCompressor = new Compressor(1, PneumaticsModuleType.REVPH);
   Solenoid phSolenoid = new Solenoid(PneumaticsModuleType.REVPH, 0);
   Solenoid phSolenoid2 = new Solenoid(PneumaticsModuleType.REVPH, 1);
 
   double kP_dist = 0.1;
   double kD_dist = 0.0;
+  double tolerance_dist = .05;
   PIDController PID_dist = new PIDController(kP_dist, 0, kD_dist);
   double kP_angle = 0.1;
   double kD_angle = 0.0;
+  double tolerance_angle = 5;
   PIDController PID_angle = new PIDController(kP_dist, 0, kD_dist);
 
   double degrees = Units.radiansToDegrees(0);
@@ -66,6 +77,8 @@ public class Robot extends TimedRobot {
     SmartDashboard.putNumber("kD_dist", kD_dist);
     SmartDashboard.putNumber("kP_angle", kP_angle);
     SmartDashboard.putNumber("kD_angle", kD_angle);
+    PID_dist.setTolerance(tolerance_dist, 10);
+    PID_angle.setTolerance(tolerance_angle, 10);
 
     camera.setDriverMode(false);
     camera.setPipelineIndex(0);
@@ -111,12 +124,24 @@ public class Robot extends TimedRobot {
 
     myRobot = new DifferentialDrive(leftLead, rightLead);
     phCompressor.enableDigital();
+
+    indicatorLed = new AddressableLED(ledPort);
+    ledBuffer = new AddressableLEDBuffer(ledLength);
+    indicatorLed.setLength(ledBuffer.getLength());
+    indicatorLed.setData(ledBuffer);
+    indicatorLed.start();
+
+    for(int i = 0 ; i < ledBuffer.getLength() ; i++) {
+      ledBuffer.setRGB(i, 255, 0, 0);
+    }
+    indicatorLed.setData(ledBuffer);
  }
 
   @Override
   public void autonomousInit() {
     timer.reset();
     timer.start();
+    setLed(0, 0, 255);
   }
     
   @Override
@@ -156,6 +181,10 @@ public class Robot extends TimedRobot {
   double p_angle = 0;
   double d_angle = 0;
 
+  boolean distAtSet = false;
+  boolean angleAtSet = false;
+  boolean ready = false;
+
   @Override
   public void teleopPeriodic() {
     p_dist = SmartDashboard.getNumber("kP_dist", 0);
@@ -190,7 +219,7 @@ public class Robot extends TimedRobot {
     steer = rightXstick;
 
     var result = camera.getLatestResult();
-   if (driverController.getBButtonPressed()) {
+    if (driverController.getBButtonPressed()) {
       phSolenoid.set(true);
       Timer.delay(1.0);
     } else if (driverController.getBButtonReleased()) {
@@ -214,10 +243,34 @@ public class Robot extends TimedRobot {
         SmartDashboard.putNumber("Z ROTATION (yaw)", Units.radiansToDegrees(target.getBestCameraToTarget().getRotation().getZ()));*/
         forward = -PID_dist.calculate(target.getBestCameraToTarget().getTranslation().getX(), 30);
         steer = PID_angle.calculate(target.getBestCameraToTarget().getTranslation().getY(), 0);
-      } else {
-        forward = 0;
+
+        distAtSet = PID_dist.atSetpoint();
+        angleAtSet = PID_angle.atSetpoint();
+        ready = distAtSet && angleAtSet;
+        SmartDashboard.putBoolean("has target", true);//we see a target!
+        SmartDashboard.putBoolean("distance good", distAtSet);//are we at a good distance?
+        SmartDashboard.putBoolean("angle good", angleAtSet);//are we at a good angle?
+        SmartDashboard.putBoolean("ready", ready);//are we at a good distance and angle?
+
+        if((PID_dist.atSetpoint() & PID_angle.atSetpoint())) {//yes!
+          driverController.setRumble(RumbleType.kLeftRumble, .1);//let the drivers know with some rumble!
+          shootController.setRumble(RumbleType.kLeftRumble, .1);
+          setLed(0, 255, 0);
+        } else {//no
+          driverController.setRumble(RumbleType.kLeftRumble, 0);//rumble needs to be explicitly set to 0
+          shootController.setRumble(RumbleType.kLeftRumble, 0);
+          setLed(255, 0, 0);
+        }
+      } else {//no target, reset dashboard to let drivers know
+        resetDash();
       }
+    } else {//edge case where we lose a target mid aim, set everything to false to let the drivers know something is wrong
+      resetDash();
     }
+
+    if(ready) {
+      //if shoot button is pressed, shoot()
+    } //else if manual override buttons are held, shoot()
 
     if (shootController.getLeftBumperPressed()) {
       phSolenoid2.set(true);
@@ -231,5 +284,26 @@ public class Robot extends TimedRobot {
 
     SmartDashboard.putNumber("forward", forward);
     myRobot.arcadeDrive(steer, forward);
+  }
+
+  public void resetDash() {
+    SmartDashboard.putBoolean("has target", false);
+    SmartDashboard.putBoolean("distance good", false);
+    SmartDashboard.putBoolean("angle good", false);
+    SmartDashboard.putBoolean("ready", false);
+    driverController.setRumble(RumbleType.kLeftRumble, 0);
+    shootController.setRumble(RumbleType.kLeftRumble, 0);
+    setLed(255, 0, 0);
+  }
+
+  public void setLed(int r, int g, int b) {
+    for(int i = 0 ; i < ledBuffer.getLength() ; i++) {
+      ledBuffer.setRGB(i, 255, 0, 0);
+    }
+    indicatorLed.setData(ledBuffer);
+  }
+
+  public void shoot() {
+
   }
 }
