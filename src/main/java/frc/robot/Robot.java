@@ -9,6 +9,7 @@ import edu.wpi.first.wpilibj.drive.DifferentialDrive;
 import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
 
 import org.photonvision.PhotonCamera;
+import org.photonvision.PhotonUtils;
 import org.photonvision.targeting.PhotonTrackedTarget;
 import edu.wpi.first.wpilibj.Timer;
 import java.util.List;
@@ -49,6 +50,10 @@ public class Robot extends TimedRobot {
   AddressableLEDBuffer ledBuffer;
   final int ledPort = 0;
   final int ledLength = 20;
+  //RED = NO TARGET
+  //BLUE = NOT AIMING
+  //YELLOW = TARGET BUT NOT READY TO SHOOT
+  //GREEN = READY TO SHOOT
 
   Compressor phCompressor = new Compressor(1, PneumaticsModuleType.REVPH);
   Solenoid phSolenoid = new Solenoid(PneumaticsModuleType.REVPH, 0);
@@ -64,9 +69,12 @@ public class Robot extends TimedRobot {
   PIDController PID_angle = new PIDController(kP_dist, 0, kD_dist);
 
   double degrees = Units.radiansToDegrees(0);
-  final double CAMERA_HEIGHT_METERS = Units.inchesToMeters(24);
-  final double TARGET_HEIGHT_METERS = Units.feetToMeters(5);
-  final double GOAL_RANGE_METERS = Units.feetToMeters(3);
+
+  final double CAMERA_HEIGHT_METERS = Units.inchesToMeters(24);//height of the camera from the ground
+  final double TARGET_HEIGHT_METERS = Units.feetToMeters(5);//height of target
+  final double GOAL_RANGE_METERS = Units.feetToMeters(3);//goal range
+  final double CAMERA_PITCH_RADIANS = Units.degreesToRadians(0);// Angle between horizontal and the camera.
+
   DigitalInput back = new DigitalInput(0);
   DigitalInput shoot = new DigitalInput(1);
   DigitalInput intake = new DigitalInput(2);
@@ -132,7 +140,7 @@ public class Robot extends TimedRobot {
     indicatorLed.start();
 
     for(int i = 0 ; i < ledBuffer.getLength() ; i++) {
-      ledBuffer.setRGB(i, 255, 0, 0);
+      ledBuffer.setRGB(i, 0, 0, 255);
     }
     indicatorLed.setData(ledBuffer);
  }
@@ -218,7 +226,6 @@ public class Robot extends TimedRobot {
     forward = leftYstick;
     steer = rightXstick;
 
-    var result = camera.getLatestResult();
     if (driverController.getBButtonPressed()) {
       phSolenoid.set(true);
       Timer.delay(1.0);
@@ -231,6 +238,8 @@ public class Robot extends TimedRobot {
     }
 
     if(driverController.getAButton()) {
+      var result = camera.getLatestResult();
+
       if(result.hasTargets()) {
         List<PhotonTrackedTarget> targets = result.getTargets();
         PhotonTrackedTarget target = targets.get(0);
@@ -241,8 +250,15 @@ public class Robot extends TimedRobot {
         SmartDashboard.putNumber("X ROTATION (roll)", Units.radiansToDegrees(target.getBestCameraToTarget().getRotation().getX()));
         SmartDashboard.putNumber("Y ROTATION (pitch)", Units.radiansToDegrees(target.getBestCameraToTarget().getRotation().getY()));
         SmartDashboard.putNumber("Z ROTATION (yaw)", Units.radiansToDegrees(target.getBestCameraToTarget().getRotation().getZ()));*/
-        forward = -PID_dist.calculate(target.getBestCameraToTarget().getTranslation().getX(), 30);
-        steer = PID_angle.calculate(target.getBestCameraToTarget().getTranslation().getY(), 0);
+        double range =
+        PhotonUtils.calculateDistanceToTargetMeters(
+                CAMERA_HEIGHT_METERS,
+                TARGET_HEIGHT_METERS,
+                CAMERA_PITCH_RADIANS,
+                Units.degreesToRadians(result.getBestTarget().getPitch()));
+
+        forward = -PID_dist.calculate(range, 30);
+        steer = -PID_angle.calculate(result.getBestTarget().getYaw(), 0);
 
         distAtSet = PID_dist.atSetpoint();
         angleAtSet = PID_angle.atSetpoint();
@@ -255,17 +271,21 @@ public class Robot extends TimedRobot {
         if((PID_dist.atSetpoint() & PID_angle.atSetpoint())) {//yes!
           driverController.setRumble(RumbleType.kLeftRumble, .1);//let the drivers know with some rumble!
           shootController.setRumble(RumbleType.kLeftRumble, .1);
-          setLed(0, 255, 0);
+          setLed(0, 255, 0);//ready!
         } else {//no
           driverController.setRumble(RumbleType.kLeftRumble, 0);//rumble needs to be explicitly set to 0
           shootController.setRumble(RumbleType.kLeftRumble, 0);
-          setLed(255, 0, 0);
+          setLed(255, 255, 0);//we have a target, but were not in range
         }
-      } else {//no target, reset dashboard to let drivers know
+      } else {//no target, reset dashboard to let drivers know and disable steering
         resetDash();
+        forward = 0;
+        steer = 0;
+        setLed(255, 0, 0);
       }
-    } else {//edge case where we lose a target mid aim, set everything to false to let the drivers know something is wrong
+    } else {
       resetDash();
+      setLed(0, 0, 255);
     }
 
     if(ready) {
@@ -293,7 +313,6 @@ public class Robot extends TimedRobot {
     SmartDashboard.putBoolean("ready", false);
     driverController.setRumble(RumbleType.kLeftRumble, 0);
     shootController.setRumble(RumbleType.kLeftRumble, 0);
-    setLed(255, 0, 0);
   }
 
   public void setLed(int r, int g, int b) {
