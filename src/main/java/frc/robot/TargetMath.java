@@ -1,9 +1,7 @@
 package frc.robot;
 import edu.wpi.first.math.geometry.Rotation3d;
-import edu.wpi.first.math.geometry.Transform3d;
 import edu.wpi.first.math.geometry.Translation2d;
 import edu.wpi.first.math.geometry.Translation3d;
-import org.photonvision.PhotonUtils;
 import org.photonvision.targeting.PhotonTrackedTarget;
 
 /**
@@ -195,10 +193,10 @@ public class TargetMath {
      * @return distance to PID to
      */
     public static double retargetDistance(PhotonTrackedTarget target, double headOnDistance, double offset) {
-        double y1 = gridOffset(target).y;
+        double y1 = gridOffset(target).getY();
         double y2 = offset;
         double y3 = y1 + y2;
-        double x = gridOffset(target).x;
+        double x = gridOffset(target).getX();
 
         double angle1 = Math.toDegrees(Math.atan(y1/x));
         double angle2 = Math.atan(y3/x);
@@ -213,14 +211,14 @@ public class TargetMath {
      * @return andle to PID to
      */
     public static double retargetAngle(PhotonTrackedTarget target, double headOnDistance, double offset) {
-        double y1 = gridOffset(target).y;
+        double y1 = gridOffset(target).getY();
         double y2 = offset;
         double y3 = y1 + y2;
-        double x = gridOffset(target).x;
+        double x = gridOffset(target).getX();
 
-        double angle1 = Math.toDegrees(Math.atan(y1/x));
+        //double angle1 = Math.toDegrees(Math.atan(y1/x));
         double angle2 = Math.atan(y3/x);
-        double bestDistance = angle2 - angle1;
+        //double bestDistance = angle2 - angle1;
 
         double z1 = headOnDistance;
         double z2 = Math.sin(angle2)*y3;
