@@ -7,6 +7,7 @@ import edu.wpi.first.wpilibj.drive.DifferentialDrive;
 import edu.wpi.first.wpilibj.Timer;
 
 import com.revrobotics.*;
+import com.revrobotics.CANSparkMax.IdleMode;
 import com.revrobotics.CANSparkMaxLowLevel.MotorType;
 
 import edu.wpi.first.wpilibj.DigitalInput;
@@ -75,6 +76,14 @@ public class Robot extends TimedRobot {
     rightFollow2.setSmartCurrentLimit(driveCurrentLimit);
     intakeMotor.setSmartCurrentLimit(intakeCurrentLimit);
 
+    leftLeader.setIdleMode(IdleMode.kBrake);
+    leftFollow1.setIdleMode(IdleMode.kBrake);
+    leftFollow2.setIdleMode(IdleMode.kBrake);
+    rightLeader.setIdleMode(IdleMode.kBrake);
+    rightFollow1.setIdleMode(IdleMode.kBrake);
+    rightFollow2.setIdleMode(IdleMode.kBrake);
+    intakeMotor.setIdleMode(IdleMode.kBrake);
+
     leftFollow1.follow(leftLeader);
     leftFollow2.follow(leftLeader);
     rightFollow1.follow(rightLeader);
@@ -120,13 +129,13 @@ public class Robot extends TimedRobot {
       forward = (driverController.getLeftY());
       steer = (driverController.getRightX());
     }
-
+    intakeMotor.set(0);
     if(shootController.getLeftBumper()) {
-      intakeMotor.set(1);
+      intakeMotor.set(.5);
     } else if(shootController.getLeftTriggerAxis() > .05){
       intakeMotor.set(shootController.getLeftTriggerAxis());
     } else if(shootController.getRightBumper()){
-      intakeMotor.set(-1);
+      intakeMotor.set(-.5);
     } else if(shootController.getRightTriggerAxis() > .05){
       intakeMotor.set(-shootController.getRightTriggerAxis());
     }
