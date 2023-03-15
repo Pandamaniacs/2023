@@ -3,14 +3,16 @@ package frc.robot;
 import edu.wpi.first.wpilibj.TimedRobot;
 import edu.wpi.first.wpilibj.XboxController;
 import edu.wpi.first.wpilibj.drive.DifferentialDrive;
+import edu.wpi.first.math.controller.*;
+
+import com.kauailabs.navx.frc.AHRS;
 
 import edu.wpi.first.wpilibj.Timer;
+import edu.wpi.first.wpilibj.SPI;
 
 import com.revrobotics.*;
 import com.revrobotics.CANSparkMax.IdleMode;
 import com.revrobotics.CANSparkMaxLowLevel.MotorType;
-
-import edu.wpi.first.wpilibj.DigitalInput;
 
 public class Robot extends TimedRobot {
   private XboxController driverController = new XboxController(0);
@@ -33,18 +35,21 @@ public class Robot extends TimedRobot {
   private CANSparkMax rightFollow2;
   private CANSparkMax intakeMotor;
 
-  private final Timer timer = new Timer();
+  private final double kP = .05;
+  private final double kI = 0;
+  private final double kD = 0;
+  PIDController PID = new PIDController(kP, kI, kD);
 
-  DigitalInput back = new DigitalInput(0);
-  DigitalInput shoot = new DigitalInput(1);
-  DigitalInput intake = new DigitalInput(2);
+  AHRS ahrs;
+
+  private final Timer timer = new Timer();
 
   @Override
   public void robotInit() {
 
     initMotors();
-
     myRobot = new DifferentialDrive(leftLeader, rightLeader);
+    ahrs = new AHRS(SPI.Port.kMXP); 
   }
 
   int first = 0;
@@ -104,31 +109,53 @@ public class Robot extends TimedRobot {
     timer.start();
   }
 
-  private final int seconds = 2;
+  private final double deposit = 1;
+  private final double exitCommunity = deposit + 2.5;
+  private final double charging = exitCommunity + 1.85;
   private final double speed = .5;
+  double pitchAngle;
   @Override
   public void autonomousPeriodic() {
-    if(timer.get() < seconds) {
+    pitchAngle = ahrs.getPitch();
+    // if it's between start time and one second, intake in the cube/poop out the cube
+    if(timer.get() > 0 && timer.get() < deposit) {
+      intakeMotor.set(-1);
+    // if the time is between one second and 3.5 seconds, intake stops and robot moves out of community
+    } else if(timer.get() > deposit && timer.get() < exitCommunity) {
+      intakeMotor.set(0);
       myRobot.arcadeDrive(0, speed);
+      // time is between 3.5 seconds and 4.25
+    } else if(timer.get() > exitCommunity && timer.get() < charging) {
+      intakeMotor.set(0);
+      myRobot.arcadeDrive(0, -speed);
+      // myRobot.arcadeDrive(0, PID.calculate(pitchAngle, 0));
     } else {
-      myRobot.arcadeDrive(0, 0);
+      myRobot.stopMotor();
+      intakeMotor.set(0);
     }
   }
-
+  private final double turnMultiplier = .6;
+  private final double speedMultiplier = 1;
   @Override
   public void teleopPeriodic() {
     double forward;
     double steer;
     if(driverController.getLeftBumper() && driverController.getRightBumper()) {
-      forward = (driverController.getLeftY()/4);
-      steer = (driverController.getRightX()/4);
+      forward = (driverController.getLeftY()*speedMultiplier);
+      steer = (driverController.getRightX()*turnMultiplier);
     } else if(driverController.getLeftBumper() || driverController.getRightBumper()) {
-      forward = (driverController.getLeftY()/2);
-      steer = (driverController.getRightX()/2);
+      forward = (driverController.getLeftY()*speedMultiplier/2);
+      steer = (driverController.getRightX()*turnMultiplier/2);
     } else {
-      forward = (driverController.getLeftY());
-      steer = (driverController.getRightX());
+      forward = (driverController.getLeftY()*speedMultiplier/3);
+      steer = (driverController.getRightX()*turnMultiplier/2);
     }
+
+    // if(driverController.getLeftTriggerAxis() >= .1 || driverController.getRightTriggerAxis() >= .1) {
+    //   forward = -forward;
+    //   steer = -steer;
+    // }
+
     intakeMotor.set(0);
     if(shootController.getLeftBumper()) {
       intakeMotor.set(.5);
