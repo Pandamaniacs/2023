@@ -3,16 +3,14 @@ package frc.robot;
 import edu.wpi.first.wpilibj.TimedRobot;
 import edu.wpi.first.wpilibj.XboxController;
 import edu.wpi.first.wpilibj.drive.DifferentialDrive;
-import edu.wpi.first.math.controller.*;
-
-import com.kauailabs.navx.frc.AHRS;
 
 import edu.wpi.first.wpilibj.Timer;
-import edu.wpi.first.wpilibj.SPI;
 
 import com.revrobotics.*;
-import com.revrobotics.CANSparkMax.IdleMode;
 import com.revrobotics.CANSparkMaxLowLevel.MotorType;
+import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
+import edu.wpi.first.math.controller.PIDController;
+import edu.wpi.first.wpilibj.ADIS16470_IMU;
 
 public class Robot extends TimedRobot {
   private XboxController driverController = new XboxController(0);
@@ -35,25 +33,30 @@ public class Robot extends TimedRobot {
   private CANSparkMax rightFollow2;
   private CANSparkMax intakeMotor;
 
-  private final double kP = .05;
-  private final double kI = 0;
-  private final double kD = 0;
-  PIDController PID = new PIDController(kP, kI, kD);
-
-  AHRS ahrs;
-
   private final Timer timer = new Timer();
+  ADIS16470_IMU gyro = new ADIS16470_IMU();
+
+  private double kP = .05;
+  private double kI = 0;
+  private double kD = 0;
+  private double kP_bal = .035;
+  private double kI_bal = 0;
+  private double kD_bal = .005;
+  PIDController PID = new PIDController(kP, kI, kD);
+  PIDController PID_bal = new PIDController(kP_bal, kI_bal, kD_bal);
+  double set_point;
 
   @Override
   public void robotInit() {
 
     initMotors();
+    
     myRobot = new DifferentialDrive(leftLeader, rightLeader);
-    ahrs = new AHRS(SPI.Port.kMXP); 
+    SmartDashboard.putNumber("gyro", 0);
+    SmartDashboard.putNumber("kP bal", 0);
+    SmartDashboard.putNumber("kD bal", 0);
   }
 
-  int first = 0;
-  
   public void initMotors() {
     leftLeader = new CANSparkMax(leftLeadID, MotorType.kBrushless);
     leftFollow1 = new CANSparkMax(leftFollow1ID, MotorType.kBrushless);
@@ -81,14 +84,6 @@ public class Robot extends TimedRobot {
     rightFollow2.setSmartCurrentLimit(driveCurrentLimit);
     intakeMotor.setSmartCurrentLimit(intakeCurrentLimit);
 
-    leftLeader.setIdleMode(IdleMode.kBrake);
-    leftFollow1.setIdleMode(IdleMode.kBrake);
-    leftFollow2.setIdleMode(IdleMode.kBrake);
-    rightLeader.setIdleMode(IdleMode.kBrake);
-    rightFollow1.setIdleMode(IdleMode.kBrake);
-    rightFollow2.setIdleMode(IdleMode.kBrake);
-    intakeMotor.setIdleMode(IdleMode.kBrake);
-
     leftFollow1.follow(leftLeader);
     leftFollow2.follow(leftLeader);
     rightFollow1.follow(rightLeader);
@@ -107,66 +102,74 @@ public class Robot extends TimedRobot {
   public void autonomousInit() {
     timer.reset();
     timer.start();
+    gyro.reset();
+    set_point = gyro.getAngle();
+    SmartDashboard.putNumber("x_axis", gyro.getXComplementaryAngle());
+    SmartDashboard.putNumber("y axis", gyro.getYComplementaryAngle());
   }
 
   private final double deposit = 1;
-  private final double exitCommunity = deposit + 2.5;
-  private final double charging = exitCommunity + 1.85;
-  private final double speed = .5;
-  double pitchAngle;
+  private final double exitCommunity = deposit + 3.5;
+  private final double re_enter = exitCommunity + 0.5;
+  private final double speed = 0.4;
+  double error = -gyro.getRate();
+
   @Override
   public void autonomousPeriodic() {
-    pitchAngle = ahrs.getPitch();
-    // if it's between start time and one second, intake in the cube/poop out the cube
-    if(timer.get() > 0 && timer.get() < deposit) {
-      intakeMotor.set(-1);
-    // if the time is between one second and 3.5 seconds, intake stops and robot moves out of community
-    } else if(timer.get() > deposit && timer.get() < exitCommunity) {
-      intakeMotor.set(0);
-      myRobot.arcadeDrive(0, speed);
-      // time is between 3.5 seconds and 4.25
-    } else if(timer.get() > exitCommunity && timer.get() < charging) {
-      intakeMotor.set(0);
-      myRobot.arcadeDrive(0, -speed);
-      // myRobot.arcadeDrive(0, PID.calculate(pitchAngle, 0));
-    } else {
-      myRobot.stopMotor();
-      intakeMotor.set(0);
-    }
+    SmartDashboard.putNumber("y axis", gyro.getYComplementaryAngle());
+    // // if it's between start time and one second, intake in the cube/poop out the cube
+    // if(timer.get() > 0 && timer.get() < deposit) {
+    //   intakeMotor.set(-1);
+    // // if the time is between one second and 3.5 seconds, intake stops and robot moves out of community
+    // } else if(timer.get() > deposit && timer.get() < exitCommunity) {
+    //   intakeMotor.set(0);
+    //   for (double a = gyro.getYComplementaryAngle(); a < 20; a++) {
+    //  //ensures that the robot motors autocorrect itself through the gyro
+    //     myRobot.arcadeDrive(0, speed - kP*error);
+    //   }
+    //   // time is between 3.5 seconds and 4.25
+    // } else if(timer.get() > exitCommunity && timer.get() < re_enter) {
+    //   intakeMotor.set(0);
+    //   myRobot.arcadeDrive(0, -speed);
+    // } else if (timer.get() > re_enter && timer.get() < 15) {
+    //   for (double a = gyro.getYComplementaryAngle(); a > 1; a++) {
+    //     //ensures that the robot motors autocorrect itself through the gyro
+    //   myRobot.arcadeDrive(0, .05 + kP*error);
+    // } }
+    // else {
+    //   myRobot.stopMotor();
+    //   intakeMotor.set(0);
+    // }
+    myRobot.arcadeDrive(0, PID_bal.calculate(gyro.getYComplementaryAngle(), 0));
   }
-  private final double turnMultiplier = .6;
-  private final double speedMultiplier = 1;
+  
   @Override
   public void teleopPeriodic() {
     double forward;
     double steer;
     if(driverController.getLeftBumper() && driverController.getRightBumper()) {
-      forward = (driverController.getLeftY()*speedMultiplier);
-      steer = (driverController.getRightX()*turnMultiplier);
+      forward = (driverController.getLeftY()/4);
+      steer = (driverController.getRightX()/4);
     } else if(driverController.getLeftBumper() || driverController.getRightBumper()) {
-      forward = (driverController.getLeftY()*speedMultiplier/2);
-      steer = (driverController.getRightX()*turnMultiplier/2);
+      forward = (driverController.getLeftY()/2);
+      steer = (driverController.getRightX()/2);
     } else {
-      forward = (driverController.getLeftY()*speedMultiplier/3);
-      steer = (driverController.getRightX()*turnMultiplier/2);
+      forward = (driverController.getLeftY());
+      steer = (driverController.getRightX());
     }
 
-    // if(driverController.getLeftTriggerAxis() >= .1 || driverController.getRightTriggerAxis() >= .1) {
-    //   forward = -forward;
-    //   steer = -steer;
-    // }
-
-    intakeMotor.set(0);
     if(shootController.getLeftBumper()) {
-      intakeMotor.set(.5);
+      intakeMotor.set(1);
     } else if(shootController.getLeftTriggerAxis() > .05){
       intakeMotor.set(shootController.getLeftTriggerAxis());
     } else if(shootController.getRightBumper()){
-      intakeMotor.set(-.5);
+      intakeMotor.set(-1);
     } else if(shootController.getRightTriggerAxis() > .05){
       intakeMotor.set(-shootController.getRightTriggerAxis());
+    } else {
+      intakeMotor.set(0);
     }
-
+    SmartDashboard.putNumber("y axis", gyro.getYComplementaryAngle());
     myRobot.arcadeDrive(steer, forward);
   }
 }
